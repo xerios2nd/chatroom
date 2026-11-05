@@ -1,0 +1,15 @@
+/* Global reset for the standalone build only. The module's own styles live in src/lib/styles. */
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+}
+body {
+  background: #f7f7fb;
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #0f0f17;
+  }
+}
