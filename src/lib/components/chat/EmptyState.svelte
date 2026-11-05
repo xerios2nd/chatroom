@@ -9,7 +9,7 @@
   /** @type {{ conversation: import('../../state/conversations.svelte.js').Conversation, onopenconfig: (section?: string) => void, onopensettings: () => void }} */
   let { conversation, onopenconfig, onopensettings } = $props();
 
-  const { conversations, chat, connection, presets } = getAppState();
+  const { conversations, chat, connection, presets, voice } = getAppState();
   const cfg = $derived(conversation.config);
   const contextCount = $derived(cfg.contexts.filter((c) => c.enabled && c.content.trim()).length);
 
@@ -83,6 +83,14 @@
       </button>
       <button class="btn" onclick={() => onopenconfig()}>
         <Icon name="sliders-horizontal" size={15} /> More options
+      </button>
+      <button
+        class="btn start-voice"
+        onclick={() => voice.start(conversation.id)}
+        disabled={chat.isBusy(conversation.id) || !voice.canStart()}
+        title={voice.canStart() ? 'Talk to the interviewer out loud, hands-free' : 'Voice needs speech recognition (Chrome, Edge, Safari) or a server engine'}
+      >
+        <Icon name="audio-lines" size={15} /> Start by voice
       </button>
       <button class="btn primary start" onclick={start} disabled={chat.isBusy(conversation.id)}>
         <Icon name="play" size={15} /> Start interview
@@ -246,8 +254,12 @@
     gap: 8px;
     flex-wrap: wrap;
   }
-  .start {
+  .start-voice {
     margin-left: auto;
+    color: var(--ic-accent);
+    border-color: color-mix(in srgb, var(--ic-accent) 40%, var(--ic-border));
+  }
+  .start {
     padding: 0 18px;
   }
   .tip {
@@ -260,9 +272,10 @@
     .row {
       grid-template-columns: 1fr;
     }
-    .start {
+    .start,
+    .start-voice {
       margin-left: 0;
-      width: 100%;
+      flex: 1;
     }
     .tip {
       text-align: center;

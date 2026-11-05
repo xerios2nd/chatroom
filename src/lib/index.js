@@ -19,3 +19,8 @@ export { buildSystemPrompt, buildRequestMessages, defaultConversationConfig } fr
 export { INTERVIEW_PRESETS, QUICK_ACTIONS } from './core/presets.js';
 export { conversationToMarkdown, conversationsToJSON, parseImport } from './core/exporters.js';
 export { createStorage } from './core/storage.js';
+
+// Voice (framework-agnostic: STT/TTS engines, speech queue, streamed-text chunking)
+export { createBrowserTTS, createServerTTS, createSpeechQueue, loadBrowserVoices } from './voice/tts.js';
+export { createBrowserSTT, createRecorder, openMic } from './voice/stt.js';
+export { createSentenceChunker, splitForSpeech, toSpeechText } from './voice/speechText.js';

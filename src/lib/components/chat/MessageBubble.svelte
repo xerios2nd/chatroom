@@ -15,7 +15,8 @@
    */
   let { message, convId, isLastAssistant } = $props();
 
-  const { chat, conversations, toasts, settings } = getAppState();
+  const { chat, conversations, toasts, settings, voice } = getAppState();
+  const reading = $derived(voice.readingMsgId === message.id);
 
   const busy = $derived(chat.isBusy(convId));
   const run = $derived(chat.run(convId));
@@ -93,6 +94,8 @@
   <div class="body">
     {#if action}
       <div class="action-tag"><Icon name={action.icon} size={12} /> {action.label}</div>
+    {:else if message.kind === 'voice'}
+      <div class="action-tag spoken" title="Transcribed from speech"><Icon name="mic" size={12} /> Spoken</div>
     {/if}
 
     {#if editing}
@@ -178,7 +181,14 @@
             <button class="btn ghost icon sm" onclick={startEdit} disabled={busy} title="Edit & resend" aria-label="Edit message">
               <Icon name="pencil" size={14} />
             </button>
-          {:else if isLastAssistant}
+          {:else}
+            {#if !voice.active && settings.values.ttsEngine !== 'off'}
+              <button class="btn ghost icon sm" class:reading onclick={() => voice.readAloud(message)} title={reading ? 'Stop reading' : 'Read aloud'} aria-label={reading ? 'Stop reading' : 'Read aloud'} aria-pressed={reading}>
+                <Icon name={reading ? 'volume-x' : 'volume-2'} size={14} />
+              </button>
+            {/if}
+          {/if}
+          {#if !isUser && isLastAssistant}
             <button class="btn ghost icon sm" onclick={() => chat.regenerate(convId, message.id)} disabled={busy} title="Regenerate" aria-label="Regenerate reply">
               <Icon name="refresh-cw" size={14} />
             </button>
@@ -270,6 +280,17 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--ic-accent);
+  }
+  .action-tag.spoken {
+    color: var(--ic-text-3);
+  }
+  .tools .reading {
+    color: var(--ic-accent);
+    opacity: 1;
+  }
+  .msg:has(.reading) .tools {
+    opacity: 1;
+    transform: none;
   }
   .plain {
     white-space: pre-wrap;

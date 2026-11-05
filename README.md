@@ -43,6 +43,8 @@ These environment variables simulate real-world conditions:
 | `FAIL_RATE=0.4` | Return random 503s with `Retry-After`, to exercise the retry logic |
 | `API_KEY=secret` | Require a bearer token |
 | `REASONING=1` | Stream `reasoning_content` the way thinking models do |
+
+It also mocks `/v1/audio/transcriptions` (fixed text) and `/v1/audio/speech` (a short tone), so you can try the server voice engines.
 | `DELAY_MS`, `TOKEN_MS` | Delay before the first token, and between tokens |
 
 ## Features
@@ -52,11 +54,30 @@ These environment variables simulate real-world conditions:
 - **Context documents**: resume, job description, company info and notes. Paste them, upload text files, or drag and drop. Each one can be toggled on or off and shows a token estimate. A live system-prompt preview shows how much of the context budget is used.
 - **Coaching quick actions**: Feedback, Hint, Model answer, Clarify, Next question, End & debrief (a full scorecard).
 - **Streaming** with markdown and code-block copy, plus a collapsible view of the model's reasoning for thinking models.
+- **Voice mode**, a hands-free spoken interview (see below), plus **read aloud** on any reply and **dictation** into the text box.
 - **Answer timer**, so you learn to keep spoken answers to 1–2 minutes.
-- **Voice dictation** through the Web Speech API, where the browser supports it.
 - **Message tools**: copy, edit and resend, regenerate, delete, stop (`Esc`).
 - **Export** a conversation as Markdown or JSON, or export and import everything as JSON.
 - **Light and dark themes**, a responsive layout, and keyboard shortcuts. All animations respect `prefers-reduced-motion`.
+
+### Voice mode
+
+Click **Voice** in the composer, or **Start by voice** on a new interview, and talk:
+
+1. **Listening:** a live transcript appears as you speak. When you pause (configurable, 2.2s by default) your answer is sent. `Space` sends it right away.
+2. **Thinking → speaking:** the reply is read aloud *while it streams*. Each sentence is spoken as soon as it's complete, so you hear the interviewer within moments rather than after the whole reply is generated.
+3. **Back to listening:** the mic reopens when the interviewer finishes. Press **Interrupt** (or `Space`) to cut them off and answer.
+
+While voice mode is on, the model is told to keep turns short and spoken: no markdown, lists or code. It's also told to make allowances for transcription errors. Quick actions (Feedback, Hint, …) still work and are spoken too. Code blocks are read as "I put a code snippet on screen" and stay visible in the chat. Spoken answers are tagged **Spoken** in the transcript. Pause the mic, switch back to typing (⌨), or change conversations at any time; voice mode only follows the conversation it started in.
+
+| | Browser engine (default) | Server engine |
+| --- | --- | --- |
+| **Speech → text** | Web Speech API: live transcript, no setup. Chrome and Edge use Google's or Microsoft's cloud recognizer; Firefox doesn't support it. | Records the answer and posts it to an OpenAI-compatible `/v1/audio/transcriptions` (whisper.cpp server, Speaches, faster-whisper-server…). Fully local, with no live transcript. A level detector decides when you've stopped talking. |
+| **Text → speech** | `speechSynthesis` with your OS voices (pick one and preview it in Settings → Voice). | Posts each sentence to `/v1/audio/speech` (Kokoro-FastAPI, Speaches, openedai-speech…). The next sentence is fetched while the current one plays. If the server fails, the browser voice takes over. |
+
+Unsloth only serves the chat model, so the server engines need a separate speech server. In Settings → Voice, leave the speech base URL blank to use the chat server, enter a full URL, or use `/speech/v1` with `SPEECH_TARGET=http://localhost:8000` in `.env` to proxy it in dev. `npm run mock` also mocks both audio endpoints.
+
+The mic is opened with echo cancellation and noise suppression. Even so, wear headphones if the interviewer's voice gets picked up as your answer.
 
 ### Reliability
 
@@ -78,6 +99,7 @@ These environment variables simulate real-world conditions:
 | `Ctrl/⌘ + ,` | Settings |
 | `Ctrl/⌘ + .` | Interview setup panel |
 | `Ctrl/⌘ + B` | Toggle sidebar |
+| `Space` (voice mode) | Send your answer / interrupt the interviewer / resume listening |
 
 ## Project structure
 
@@ -106,12 +128,18 @@ src/lib/
 │   ├── conversations.svelte.js
 │   ├── chat.svelte.js    Generation controller (streaming, retries, stop, regenerate, edit)
 │   ├── connection.svelte.js
+│   ├── voice.svelte.js   Voice-mode state machine (listen → send → speak → listen)
 │   ├── toasts.svelte.js
 │   └── dialogs.svelte.js
+├── voice/                Framework-agnostic speech building blocks
+│   ├── stt.js            Browser recognition (auto-restart), mic level meter, recorder
+│   ├── tts.js            Browser + server TTS engines, prefetching playback queue
+│   └── speechText.js     Markdown → speakable text, streaming sentence chunker
 ├── components/
 │   ├── layout/           Sidebar, ChatHeader
 │   ├── chat/             ChatView, MessageList, MessageBubble, Markdown, Composer, EmptyState, RunStatus
 │   ├── config/           ConfigDrawer, ContextEditor, SettingsModal
+│   ├── voice/            VoicePanel, VoiceSettings
 │   └── ui/               Modal, Toasts, ConfirmDialog, StatusBadge, Icon
 ├── styles/theme.css      Design tokens, all scoped under .ic-root
 └── utils/
@@ -148,8 +176,9 @@ coach.conversations.create({ presetId: 'system-design', role: 'Staff Engineer' }
 // <ChatApp state={coach} />
 ```
 
-The `api/` and `core/` folders don't depend on Svelte, so another framework can reuse
-`createClient`, `withRetry`, `buildSystemPrompt` and the rest directly.
+The `api/`, `core/` and `voice/` folders don't depend on Svelte, so another framework can reuse
+`createClient`, `withRetry`, `buildSystemPrompt`, `createSpeechQueue`, `createSentenceChunker` and the rest directly.
+The chat controller also emits lifecycle events (`chat.subscribe(evt => …)` with `start`, `delta` and `end`), which is how voice mode hooks in. A host app can use the same hook.
 
 Styles are scoped under `.ic-root`, and every color, radius and font is a `--ic-*` CSS variable
 you can override from the host.
@@ -160,7 +189,7 @@ you can override from the host.
 | --- | --- |
 | `npm run dev` | Vite dev server with the `/unsloth` proxy |
 | `npm run build` / `npm run preview` | Production build / preview (the preview server also proxies) |
-| `npm test` | Unit tests (Vitest): SSE parser, retry, error mapping, client streaming and timeouts, prompt building, import/export |
+| `npm test` | Unit tests (Vitest): SSE parser, retry, error mapping, client streaming, timeouts and audio endpoints, prompt building, import/export, speech chunking and playback queue |
 | `npm run check` | `svelte-check` |
 | `npm run mock` | Mock Unsloth server |
 

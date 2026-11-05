@@ -65,6 +65,14 @@
   import BookOpen from '@lucide/svelte/icons/book-open';
   import Gauge from '@lucide/svelte/icons/gauge';
   import Play from '@lucide/svelte/icons/play';
+  import AudioLines from '@lucide/svelte/icons/audio-lines';
+  import Volume2 from '@lucide/svelte/icons/volume-2';
+  import VolumeX from '@lucide/svelte/icons/volume-x';
+  import Keyboard from '@lucide/svelte/icons/keyboard';
+  import Headphones from '@lucide/svelte/icons/headphones';
+  import Pause from '@lucide/svelte/icons/pause';
+  import Hand from '@lucide/svelte/icons/hand';
+  import Languages from '@lucide/svelte/icons/languages';
 
   /** Name → component registry. Add icons here so every import stays explicit and tree-shakeable. */
   export const ICONS = {
@@ -134,6 +142,14 @@
     'book-open': BookOpen,
     'gauge': Gauge,
     play: Play,
+    'audio-lines': AudioLines,
+    'volume-2': Volume2,
+    'volume-x': VolumeX,
+    'keyboard': Keyboard,
+    'headphones': Headphones,
+    'pause': Pause,
+    'hand': Hand,
+    'languages': Languages,
   };
 </script>
 

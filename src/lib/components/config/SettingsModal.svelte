@@ -6,9 +6,10 @@
   import { createClient } from '../../api/client.js';
   import Modal from '../ui/Modal.svelte';
   import Icon from '../ui/Icon.svelte';
+  import VoiceSettings from '../voice/VoiceSettings.svelte';
 
-  /** @type {{ open: boolean }} */
-  let { open = $bindable(false) } = $props();
+  /** @type {{ open: boolean, tab?: string }} */
+  let { open = $bindable(false), tab = $bindable('connection') } = $props();
 
   const { settings, connection, toasts, dialogs } = getAppState();
 
@@ -17,7 +18,6 @@
   let testing = $state(false);
   /** @type {null | {ok: boolean, latencyMs: number, models?: {id: string}[], error?: any}} */
   let testResult = $state(null);
-  let tab = $state('connection');
 
   // Re-sync the draft every time the modal opens.
   $effect(() => {
@@ -52,6 +52,7 @@
   const TABS = [
     { id: 'connection', label: 'Connection', icon: 'server' },
     { id: 'generation', label: 'Generation', icon: 'sliders-horizontal' },
+    { id: 'voice', label: 'Voice', icon: 'audio-lines' },
     { id: 'app', label: 'App', icon: 'settings' },
   ];
 
@@ -62,6 +63,7 @@
     ['Ctrl/⌘ + B', 'Toggle sidebar'],
     ['Esc', 'Stop generating / close panels'],
     ['Ctrl/⌘ + Enter', 'Save an edited message'],
+    ['Space (voice mode)', 'Send answer / interrupt / resume'],
   ];
 </script>
 
@@ -173,6 +175,8 @@
         <span><b>Show model reasoning</b> for thinking models that stream <code>reasoning_content</code>.</span>
       </label>
     </div>
+  {:else if tab === 'voice'}
+    <VoiceSettings bind:draft />
   {:else}
     <div class="stack">
       <div class="field">

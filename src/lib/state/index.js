@@ -8,6 +8,7 @@ import { createConversations } from './conversations.svelte.js';
 import { createConnection } from './connection.svelte.js';
 import { createChatController } from './chat.svelte.js';
 import { createDialogs } from './dialogs.svelte.js';
+import { createVoiceController } from './voice.svelte.js';
 
 const KEY = Symbol('interview-coach');
 
@@ -33,8 +34,18 @@ export function createAppState(options = {}) {
   const conversations = createConversations({ storage, toasts, defaultConfig: options.defaultConfig });
   const connection = createConnection({ client, settings });
   const chat = createChatController({ client, settings, conversations, connection, toasts, presets });
+  // Speech endpoints may live on a different server (e.g. a Whisper/Kokoro server next to Unsloth).
+  const voiceClient = createClient(
+    () => ({
+      baseUrl: settings.values.voiceBaseUrl || settings.values.baseUrl,
+      apiKey: settings.values.voiceApiKey || settings.values.apiKey,
+      timeoutMs: settings.values.timeoutMs,
+    }),
+    options.fetch ? { fetchImpl: options.fetch } : undefined,
+  );
+  const voice = createVoiceController({ settings, chat, conversations, toasts, voiceClient });
 
-  return { storage, toasts, dialogs, settings, client, conversations, connection, chat, presets };
+  return { storage, toasts, dialogs, settings, client, voiceClient, conversations, connection, chat, voice, presets };
 }
 
 /** @typedef {ReturnType<typeof createAppState>} AppState */

@@ -26,13 +26,25 @@
 
   // svelte-ignore state_referenced_locally -- the app state is created once per mount on purpose
   const app = setAppState(provided ?? createAppState(options));
-  const { conversations, connection, settings, chat } = app;
+  const { conversations, connection, settings, chat, voice } = app;
 
   let sidebarOpen = $state(typeof window === 'undefined' ? true : window.innerWidth > 860);
   let isNarrow = $state(false);
   let configOpen = $state(false);
   let configSection = $state(null);
   let settingsOpen = $state(false);
+  let settingsTab = $state('connection');
+
+  function openSettings(tab = 'connection') {
+    settingsTab = tab;
+    settingsOpen = true;
+  }
+
+  // Voice mode belongs to one conversation: leaving it (or deleting it) ends the session.
+  $effect(() => {
+    const active = conversations.activeId;
+    if (voice.active && voice.convId !== active) voice.stop();
+  });
 
   // ---- theme ----
   let systemDark = $state(typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
@@ -60,6 +72,8 @@
       mq.removeEventListener('change', onScheme);
       nq.removeEventListener('change', onNarrow);
       stopConnection();
+      voice.stop();
+      voice.stopReading();
       chat.stopAll();
       conversations.flush();
     };
@@ -91,7 +105,7 @@
       newInterview();
     } else if (mod && e.key === ',') {
       e.preventDefault();
-      settingsOpen = true;
+      openSettings();
     } else if (mod && e.key === '.') {
       e.preventDefault();
       configOpen ? (configOpen = false) : openConfig();
@@ -112,7 +126,7 @@
       <div class="scrim" onclick={() => (sidebarOpen = false)} transition:motion={{ fn: fade, duration: 150 }} role="presentation"></div>
     {/if}
     <div class="side" class:overlay={isNarrow} transition:motion={{ fn: fly, x: -300, duration: 260, easing: cubicOut, opacity: 1 }}>
-      <Sidebar onopensettings={() => (settingsOpen = true)} onnavigate={() => isNarrow && (sidebarOpen = false)} />
+      <Sidebar onopensettings={() => openSettings()} onnavigate={() => isNarrow && (sidebarOpen = false)} />
     </div>
   {/if}
 
@@ -122,7 +136,7 @@
         conversation={conversations.active}
         ontogglesidebar={() => (sidebarOpen = !sidebarOpen)}
         onopenconfig={openConfig}
-        onopensettings={() => (settingsOpen = true)}
+        onopensettings={openSettings}
       />
     {:else}
       <div class="none" in:fade>
@@ -136,7 +150,7 @@
   {#if conversations.active}
     <ConfigDrawer open={configOpen} conversation={conversations.active} focusSection={configSection} onclose={() => (configOpen = false)} />
   {/if}
-  <SettingsModal bind:open={settingsOpen} />
+  <SettingsModal bind:open={settingsOpen} bind:tab={settingsTab} />
   <ConfirmDialog />
   <Toasts />
 </div>

@@ -13,6 +13,12 @@ export default defineConfig(({ mode }) => {
       changeOrigin: true,
       rewrite: (path) => path.replace(/^\/unsloth/, ''),
     },
+    // Optional separate speech server (Whisper / TTS) for voice mode: use base URL /speech/v1.
+    '/speech': {
+      target: env.SPEECH_TARGET || target,
+      changeOrigin: true,
+      rewrite: (path) => path.replace(/^\/speech/, ''),
+    },
   };
 
   return {

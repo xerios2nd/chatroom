@@ -78,6 +78,13 @@ export function buildSystemPrompt(config, presets = INTERVIEW_PRESETS) {
   return parts.join('\n\n');
 }
 
+/** Appended to the system prompt while the candidate is in voice mode. */
+export const VOICE_MODE_PROMPT = `## Voice mode
+The candidate is talking to you by voice, and your replies are read aloud by a text-to-speech engine.
+- Speak naturally, as in a real spoken interview. Keep each turn short: one to three sentences, unless you are giving requested feedback or a debrief.
+- Plain spoken English only: no markdown, headings, bullet lists, tables, emojis or code blocks. If code is essential, describe it in words.
+- The candidate's words come from speech recognition and may contain transcription errors. Interpret them charitably and don't penalise them for those errors.`;
+
 /**
  * Messages that should be sent to the model: settled user/assistant turns only.
  */
@@ -92,10 +99,11 @@ export function isSendable(m) {
  * The system prompt and the latest user turn are always kept.
  *
  * @param {{config: any, messages: any[]}} conversation
- * @param {{maxContextTokens?: number, reserveTokens?: number, presets?: any[]}} [opts]
+ * @param {{maxContextTokens?: number, reserveTokens?: number, presets?: any[], voiceMode?: boolean}} [opts]
  */
-export function buildRequestMessages(conversation, { maxContextTokens = 8192, reserveTokens = 1024, presets } = {}) {
-  const system = { role: 'system', content: buildSystemPrompt(conversation.config, presets) };
+export function buildRequestMessages(conversation, { maxContextTokens = 8192, reserveTokens = 1024, presets, voiceMode = false } = {}) {
+  const base = buildSystemPrompt(conversation.config, presets);
+  const system = { role: 'system', content: voiceMode ? `${base}\n\n${VOICE_MODE_PROMPT}` : base };
   const history = conversation.messages.filter(isSendable).map((m) => ({ role: m.role, content: m.content }));
 
   const budget = Math.max(256, maxContextTokens - reserveTokens);

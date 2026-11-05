@@ -12,6 +12,9 @@
  *   DELAY_MS    delay before the first token (default 400)
  *   TOKEN_MS    delay between tokens (default 25)
  *   REASONING   "1" to stream a reasoning_content block before the answer
+ *
+ * Also mocks the voice endpoints: POST /v1/audio/transcriptions (fixed text)
+ * and POST /v1/audio/speech (a short WAV tone whose length follows the input).
  */
 import http from 'node:http';
 
@@ -30,6 +33,31 @@ const QUESTIONS = [
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Mono 16-bit PCM WAV: a soft tone, ~45ms per character (max 6s). */
+function toneWav(text) {
+  const rate = 16000;
+  const seconds = Math.min(6, Math.max(0.4, text.length * 0.045));
+  const n = Math.floor(rate * seconds);
+  const buf = Buffer.alloc(44 + n * 2);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + n * 2, 4);
+  buf.write('WAVEfmt ', 8);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20);
+  buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) {
+    const env = Math.min(1, i / 800, (n - i) / 800);
+    buf.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 220 * i) / rate) * 2500 * env), 44 + i * 2);
+  }
+  return buf;
+}
 
 function reply(messages) {
   const last = messages.at(-1)?.content ?? '';
@@ -60,6 +88,20 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.url === '/v1/models') {
     return json(res, 200, { object: 'list', data: [{ id: 'default', object: 'model' }, { id: 'unsloth/mock-model', object: 'model' }] });
+  }
+  if (req.url === '/v1/audio/transcriptions' && req.method === 'POST') {
+    let size = 0;
+    for await (const chunk of req) size += chunk.length;
+    await sleep(300);
+    return json(res, 200, { text: size > 0 ? 'I would start by clarifying the requirements and then sketch the data flow.' : '' });
+  }
+  if (req.url === '/v1/audio/speech' && req.method === 'POST') {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const input = JSON.parse(raw || '{}').input || '';
+    await sleep(150);
+    res.writeHead(200, { 'Content-Type': 'audio/wav', 'Access-Control-Allow-Origin': '*' });
+    return res.end(toneWav(input));
   }
   if (req.url !== '/v1/chat/completions' || req.method !== 'POST') {
     return json(res, 404, { error: { message: `No route ${req.method} ${req.url}` } });

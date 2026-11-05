@@ -15,6 +15,30 @@ export function createChatController({ client, settings, conversations, connecti
   /** AbortControllers live outside $state: they shouldn't be proxied. */
   const controllers = new Map();
 
+  /**
+   * Lifecycle events for other features (voice mode, analytics, a host app):
+   *   { type: 'start', convId, msgId }
+   *   { type: 'delta', convId, msgId, content }   content only, batched (~30fps)
+   *   { type: 'end',   convId, msgId, status: 'done'|'error'|'stopped'|'aborted', error? }
+   */
+  const listeners = new Set();
+  function emit(evt) {
+    for (const fn of listeners) {
+      try {
+        fn(evt);
+      } catch (err) {
+        console.error('[chat] listener failed', err);
+      }
+    }
+  }
+  function subscribe(fn) {
+    listeners.add(fn);
+    return () => listeners.delete(fn);
+  }
+
+  /** Lets the voice controller tell us which conversations are in voice mode. */
+  let voiceModeResolver = () => false;
+
   const isBusy = (convId) => !!runs[convId];
 
   async function send(convId, text, { kind } = {}) {
@@ -45,6 +69,7 @@ export function createChatController({ client, settings, conversations, connecti
       maxContextTokens: s.maxContextTokens,
       reserveTokens: params.maxTokens,
       presets,
+      voiceMode: voiceModeResolver(convId),
     });
     if (messages.length < 2) {
       toasts.warning('Nothing to send yet.');
@@ -66,6 +91,7 @@ export function createChatController({ client, settings, conversations, connecti
     const controller = new AbortController();
     controllers.set(convId, controller);
     runs[convId] = { msgId, phase: 'connecting', attempt: 0, maxRetries: s.maxRetries, retryAt: null, lastError: null, startedAt: Date.now() };
+    emit({ type: 'start', convId, msgId });
 
     // Batch tokens to ~30fps so markdown isn't re-rendered for every single token.
     let pendingContent = '';
@@ -81,6 +107,7 @@ export function createChatController({ client, settings, conversations, connecti
         m.content += c;
         m.reasoning = (m.reasoning ?? '') + r;
       });
+      if (c) emit({ type: 'delta', convId, msgId, content: c });
     };
 
     let received = false;
@@ -185,6 +212,8 @@ export function createChatController({ client, settings, conversations, connecti
       delete runs[convId];
       controllers.delete(convId);
       conversations.persist();
+      const final = conversations.getMessage(convId, msgId);
+      emit({ type: 'end', convId, msgId, status: final?.status ?? 'aborted', error: final?.error ?? null });
     }
   }
 
@@ -229,5 +258,9 @@ export function createChatController({ client, settings, conversations, connecti
     stopAll,
     regenerate,
     editAndResend,
+    subscribe,
+    setVoiceModeResolver(fn) {
+      voiceModeResolver = fn;
+    },
   };
 }

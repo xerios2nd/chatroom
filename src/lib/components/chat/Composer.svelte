@@ -6,12 +6,15 @@
   import { QUICK_ACTIONS } from '../../core/presets.js';
   import { estimateTokens } from '../../core/tokens.js';
   import { debounce } from '../../utils/format.js';
+  import { createBrowserSTT, SpeechRecognitionCtor } from '../../voice/stt.js';
   import Icon from '../ui/Icon.svelte';
+  import VoicePanel from '../voice/VoicePanel.svelte';
 
-  /** @type {{ conversation: import('../../state/conversations.svelte.js').Conversation }} */
-  let { conversation } = $props();
+  /** @type {{ conversation: import('../../state/conversations.svelte.js').Conversation, onopensettings?: (tab?: string) => void }} */
+  let { conversation, onopensettings } = $props();
 
-  const { chat, settings, toasts, storage } = getAppState();
+  const { chat, settings, toasts, storage, voice } = getAppState();
+  const inVoice = $derived(voice.active && voice.convId === conversation.id);
 
   // ---- drafts (per conversation, survive reloads) ----
   /** @type {Record<string, string>} */
@@ -40,7 +43,7 @@
   // Focus the box when switching conversations or after a reply finishes.
   $effect(() => {
     conversation.id;
-    if (!busy) textarea?.focus({ preventScroll: true });
+    if (!busy && !inVoice) textarea?.focus({ preventScroll: true });
   });
 
   function submit() {
@@ -84,47 +87,43 @@
   const showTimer = $derived(waitingForAnswer && answerSecs < 30 * 60);
   const timerText = $derived(`${Math.floor(answerSecs / 60)}:${String(answerSecs % 60).padStart(2, '0')}`);
 
-  // ---- voice input (Web Speech API, where supported) ----
-  const SpeechRecognition = typeof window !== 'undefined' ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
-  let recognition = null;
+  // ---- dictation into the text box (browser speech recognition) ----
+  const canDictate = !!SpeechRecognitionCtor();
+  let dictation = null;
   let listening = $state(false);
-  let baseDraft = '';
 
   function toggleListening() {
     if (listening) return stopListening();
-    if (!SpeechRecognition) return;
-    try {
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = navigator.language || 'en-US';
-      baseDraft = draft ? `${draft.trimEnd()} ` : '';
-      recognition.onresult = (e) => {
-        let text = '';
-        for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
-        setDraft(baseDraft + text);
-      };
-      recognition.onerror = (e) => {
-        if (e.error !== 'no-speech' && e.error !== 'aborted') {
-          toasts.error('Voice input failed', { detail: e.error === 'not-allowed' ? 'Microphone permission was denied.' : e.error });
-        }
+    const base = draft ? `${draft.trimEnd()} ` : '';
+    dictation = createBrowserSTT({
+      lang: settings.values.voiceLang || navigator.language || 'en-US',
+      onText: (text) => setDraft(base + text),
+      onError: (err) => {
+        toasts.error('Dictation failed', { detail: err.message });
         listening = false;
-      };
-      recognition.onend = () => (listening = false);
-      recognition.start();
+      },
+    });
+    try {
+      dictation.start();
       listening = true;
     } catch (err) {
-      toasts.error('Voice input unavailable', { detail: err.message });
-      listening = false;
+      toasts.error('Dictation unavailable', { detail: err.message });
     }
   }
 
   function stopListening() {
-    recognition?.stop();
+    dictation?.stop();
+    dictation = null;
     listening = false;
   }
 
-  $effect(() => () => recognition?.abort());
+  $effect(() => () => dictation?.abort());
+
+  // ---- voice mode ----
+  async function startVoice() {
+    stopListening();
+    await voice.start(conversation.id);
+  }
 </script>
 
 <div class="composer">
@@ -138,6 +137,9 @@
     </div>
   {/if}
 
+  {#if inVoice}
+    <VoicePanel timerText={showTimer ? timerText : null} onopensettings={onopensettings ? () => onopensettings('voice') : undefined} />
+  {:else}
   <div class="box" class:listening class:busy>
     <textarea
       bind:this={textarea}
@@ -166,11 +168,19 @@
         {/if}
       </div>
 
-      {#if SpeechRecognition}
-        <button class="btn ghost icon mic" class:on={listening} onclick={toggleListening} title={listening ? 'Stop dictation' : 'Dictate your answer'} aria-pressed={listening} aria-label="Voice input">
+      {#if canDictate}
+        <button class="btn ghost icon mic" class:on={listening} onclick={toggleListening} title={listening ? 'Stop dictation' : 'Dictate into the text box'} aria-pressed={listening} aria-label="Dictate">
           <Icon name={listening ? 'mic-off' : 'mic'} size={16} />
         </button>
       {/if}
+      <button
+        class="btn voice"
+        onclick={startVoice}
+        disabled={!voice.canStart()}
+        title={voice.canStart() ? 'Voice mode: talk to the interviewer hands-free' : 'Voice mode needs speech recognition (Chrome, Edge, Safari) or a server engine in Settings → Voice'}
+      >
+        <Icon name="audio-lines" size={15} /><span class="vlabel">Voice</span>
+      </button>
 
       {#if busy}
         <button class="btn send stop" onclick={() => chat.stop(conversation.id)} aria-label="Stop generating" in:motion={{ fn: scale, start: 0.6, duration: 220, easing: backOut }}>
@@ -183,6 +193,7 @@
       {/if}
     </div>
   </div>
+  {/if}
 </div>
 
 <style>
@@ -296,6 +307,16 @@
   .mic.on {
     color: var(--ic-danger);
   }
+  .voice {
+    border-radius: 10px;
+    color: var(--ic-accent);
+    border-color: color-mix(in srgb, var(--ic-accent) 35%, var(--ic-border));
+    background: var(--ic-accent-soft);
+  }
+  .voice:hover:not(:disabled) {
+    background: var(--ic-accent-soft);
+    border-color: var(--ic-accent);
+  }
   .send {
     border-radius: 10px;
     min-width: 84px;
@@ -308,7 +329,8 @@
     .composer {
       padding: 6px 10px 10px;
     }
-    .hint {
+    .hint,
+    .vlabel {
       display: none;
     }
   }

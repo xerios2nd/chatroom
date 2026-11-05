@@ -7,23 +7,23 @@
 
   /**
    * @type {{ conversation: import('../../state/conversations.svelte.js').Conversation,
-   *   ontogglesidebar: () => void, onopenconfig: (section?: string) => void, onopensettings: () => void }}
+   *   ontogglesidebar: () => void, onopenconfig: (section?: string) => void, onopensettings: (tab?: string) => void }}
    */
   let { conversation, ontogglesidebar, onopenconfig, onopensettings } = $props();
 </script>
 
 <section class="chat">
-  <ChatHeader {conversation} {ontogglesidebar} onopenconfig={() => onopenconfig()} {onopensettings} />
+  <ChatHeader {conversation} {ontogglesidebar} onopenconfig={() => onopenconfig()} onopensettings={() => onopensettings()} />
   {#key conversation.id}
     <div class="stage" in:fade={{ duration: 180 }}>
       {#if conversation.messages.length}
         <MessageList {conversation} />
       {:else}
-        <EmptyState {conversation} {onopenconfig} {onopensettings} />
+        <EmptyState {conversation} {onopenconfig} onopensettings={() => onopensettings()} />
       {/if}
     </div>
   {/key}
-  <Composer {conversation} />
+  <Composer {conversation} {onopensettings} />
 </section>
 
 <style>

@@ -54,3 +54,11 @@ describe('buildRequestMessages', () => {
     expect(r.estimatedTokens).toBeLessThanOrEqual(2500);
   });
 });
+
+describe('voice mode prompt', () => {
+  it('adds spoken-style instructions only in voice mode', () => {
+    const c = conv([{ role: 'user', content: 'hi', status: 'done' }]);
+    expect(buildRequestMessages(c).messages[0].content).not.toMatch(/Voice mode/);
+    expect(buildRequestMessages(c, { voiceMode: true }).messages[0].content).toMatch(/## Voice mode[\s\S]*no markdown/);
+  });
+});

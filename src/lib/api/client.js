@@ -17,10 +17,10 @@ export function createClient(getConfig, { fetchImpl = (...a) => globalThis.fetch
     return `${base}${path}`;
   }
 
-  function headers(extra = {}) {
+  function headers(extra = {}, { json = true } = {}) {
     const { apiKey } = getConfig();
     return {
-      'Content-Type': 'application/json',
+      ...(json ? { 'Content-Type': 'application/json' } : {}),
       Accept: 'application/json',
       ...(apiKey ? { Authorization: `Bearer ${apiKey.trim()}` } : {}),
       ...extra,
@@ -48,10 +48,11 @@ export function createClient(getConfig, { fetchImpl = (...a) => globalThis.fetch
     };
 
     try {
+      const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
       const res = await fetchImpl(url(path), {
         method,
-        headers: headers(accept ? { Accept: accept } : {}),
-        body: body ? JSON.stringify(body) : undefined,
+        headers: headers(accept ? { Accept: accept } : {}, { json: !isForm }),
+        body: isForm ? body : body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
       clearTimeout(timer);
@@ -222,5 +223,50 @@ export function createClient(getConfig, { fetchImpl = (...a) => globalThis.fetch
     return text;
   }
 
-  return { listModels, ping, streamChat, completeChat, complete, url };
+  /**
+   * Speech-to-text via an OpenAI-compatible POST /audio/transcriptions
+   * (whisper.cpp server, Speaches, faster-whisper-server, …).
+   * @param {Blob} audio
+   */
+  async function transcribe(audio, { model = 'whisper-1', language, prompt, signal, timeoutMs = 60_000 } = {}) {
+    const form = new FormData();
+    const ext = (audio.type.split('/')[1] || 'webm').split(';')[0];
+    form.append('file', audio, `speech.${ext}`);
+    form.append('model', model);
+    form.append('response_format', 'json');
+    if (language) form.append('language', language);
+    if (prompt) form.append('prompt', prompt);
+    const { res, cleanup } = await open('/audio/transcriptions', { method: 'POST', body: form, signal, timeoutMs });
+    try {
+      const ctype = res.headers.get('content-type') || '';
+      if (ctype.includes('application/json')) {
+        const json = await res.json();
+        return String(json?.text ?? '').trim();
+      }
+      return (await res.text()).trim();
+    } catch (err) {
+      throw new ApiError('Invalid transcription response', { kind: ErrorKind.PARSE, cause: err });
+    } finally {
+      cleanup();
+    }
+  }
+
+  /**
+   * Text-to-speech via an OpenAI-compatible POST /audio/speech (Kokoro-FastAPI, Speaches, …).
+   * @returns {Promise<Blob>} audio
+   */
+  async function synthesize(input, { model = 'tts-1', voice = 'alloy', speed, format = 'mp3', signal, timeoutMs = 60_000 } = {}) {
+    const body = { model, input, voice, response_format: format };
+    if (speed && speed !== 1) body.speed = speed;
+    const { res, cleanup } = await open('/audio/speech', { method: 'POST', body, signal, timeoutMs, accept: 'audio/*' });
+    try {
+      const blob = await res.blob();
+      if (!blob.size) throw new ApiError('Empty audio response', { kind: ErrorKind.PARSE });
+      return blob;
+    } finally {
+      cleanup();
+    }
+  }
+
+  return { listModels, ping, streamChat, completeChat, complete, transcribe, synthesize, url };
 }

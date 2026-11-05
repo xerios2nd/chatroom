@@ -115,3 +115,37 @@ describe('createClient', () => {
     expect(r.error.kind).toBe(ErrorKind.NETWORK);
   });
 });
+
+describe('audio endpoints', () => {
+  it('transcribe posts multipart without a JSON content-type', async () => {
+    let captured;
+    const client = createClient(() => ({ baseUrl: '/v1', apiKey: 'k' }), {
+      fetchImpl: async (url, init) => {
+        captured = { url, init };
+        return new Response(JSON.stringify({ text: ' hello world ' }), { headers: { 'content-type': 'application/json' } });
+      },
+    });
+    const text = await client.transcribe(new Blob(['x'], { type: 'audio/webm;codecs=opus' }), { model: 'whisper-1', language: 'en' });
+    expect(text).toBe('hello world');
+    expect(captured.url).toBe('/v1/audio/transcriptions');
+    expect(captured.init.headers['Content-Type']).toBeUndefined();
+    expect(captured.init.headers.Authorization).toBe('Bearer k');
+    const form = captured.init.body;
+    expect(form.get('model')).toBe('whisper-1');
+    expect(form.get('language')).toBe('en');
+    expect(form.get('file').name).toBe('speech.webm');
+  });
+
+  it('synthesize returns audio and maps errors', async () => {
+    const ok = createClient(() => ({ baseUrl: '/v1' }), {
+      fetchImpl: async (url, init) => {
+        expect(JSON.parse(init.body)).toMatchObject({ model: 'tts-1', voice: 'af', input: 'Hi', speed: 1.2 });
+        return new Response(new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' }));
+      },
+    });
+    expect((await ok.synthesize('Hi', { model: 'tts-1', voice: 'af', speed: 1.2 })).size).toBe(3);
+
+    const missing = createClient(() => ({ baseUrl: '/v1' }), { fetchImpl: async () => new Response('Not Found', { status: 404 }) });
+    await expect(missing.synthesize('Hi')).rejects.toMatchObject({ kind: ErrorKind.NOT_FOUND });
+  });
+});
